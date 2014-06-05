@@ -1,0 +1,13 @@
+*.o
+
+# Auto-save files
+*~
+
+*.pyc
+
+*.RData
+*.Rhistory
+
+*.zip
+*.tar
+*.tgz
