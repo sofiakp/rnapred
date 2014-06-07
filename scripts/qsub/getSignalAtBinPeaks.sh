@@ -15,13 +15,17 @@ It will look for peak files
 For each such file, it will look for a signal file in signal_dir,
 that starts with <sample>-<MARK>.
 
+If <peak_dir> is -, then the signal at the regions of the input
+BED will be computed instead.
+
 It assumes that the BED filename has the form
 gencode.v19.annotation.noM.genes.<something>.bed
 so it will use <something> as the suffix of the output files.
 
 OPTIONS:
    -h     Show this message and exit
-   -p DIR Directory with peaks 
+   -p DIR Directory with peaks or - if you don't want to overlap 
+          with peaks. In this case, the input BED will be used as is.
           [default $LABREPO/epigenomeRoadmap/peaks/stdnames30M/combrep/]
    -f STR Suffix of peak files [default narrowPeak.gz]
    -s DIR Signal dir 
@@ -64,7 +68,8 @@ if [ ! -d ${OUTDIR}/tmp ]; then
 fi
 
 OUTSUF=$(basename $BED)
-OUTSUF=${OUTSUF/gencode.v19.annotation.noM.genes./}
+OUTSUF=${OUTSUF/gencode.v19./}
+OUTSUF=${OUTSUF/annotation.noM.genes./}
 OUTSUF=${OUTSUF/.bed/}
 
 UCSCTOOLS=${HOME}/software/ucsc
@@ -82,7 +87,7 @@ while read sample; do
     fi
 
     in_bed=${PEAKDIR}/${sample}-${MARK}.${PEAKSUF}
-    if [ ! -f ${in_bed} ]; then
+    if [[ ! -f ${in_bed} ]] && [[ ${PEAKDIR} != "-" ]]; then
 	echo "Input bed file $in_bed is missing." 1>&2
 	continue
     fi
@@ -95,12 +100,17 @@ while read sample; do
     signal_file=${SIGNALDIR}/$signal_file
 
     echo "#!/bin/bash" > $script
-    echo "module add bedtools/2.19.1" >> $script
-    # Notice that the intersection doesn't use -wa or -wb, so only
-    # the intersecting parts will be in the output. 
-    # The sort ensures that overlaps for the same gene will be in 
-    # consecutive lines.
-    echo "intersectBed -a $BED -b ${in_bed} | sort -k7,7 | awk 'BEGIN{OFS=\"\t\"}{print \$1,\$2,\$3,\$7\"_\"NR}' > $tmp_bed" >> $script
+
+    if [ $PEAKDIR != "-" ]; then
+	# Notice that the intersection doesn't use -wa or -wb, so only
+        # the intersecting parts will be in the output. 
+        # The sort ensures that overlaps for the same gene will be in 
+        # consecutive lines.
+	echo "module add bedtools/2.19.1" >> $script
+	echo "intersectBed -a $BED -b ${in_bed} | sort -k7,7 | awk 'BEGIN{OFS=\"\t\"}{print \$1,\$2,\$3,\$7\"_\"NR}' > $tmp_bed" >> $script
+    else
+	echo "sort -k4,4 $BED | awk 'BEGIN{OFS=\"\t\"}{print \$1,\$2,\$3,\$4\"_\"NR}' > $tmp_bed" >> $script
+    fi
     echo "$UCSCTOOLS/bigWigAverageOverBed -bedOut=$outfile ${signal_file} ${tmp_bed} ${tmp_out}" >> $script
     
     qsub -N ${sample}-${MARK} -q standard -l h_vmem=4G -l h_rt=2:00:00 -e $errfile -o /dev/null $script
