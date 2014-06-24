@@ -217,10 +217,11 @@ def main():
                         help = 'Comma separated list of values for the min number of examples per leaf')
     parser.add_argument('--alphas', default = '1',
                         help = 'Comma separated list of values for the alpha parameter of Lasso regression')
-    parser.add_argument('-C', default = '1', 
+    parser.add_argument('--cs', default = '1', 
                         help = 'Comma separated list of values for the C parameter of logistic regression')
     args = parser.parse_args()
-    
+    method = args.method
+
     if os.path.isfile(args.infile):
         data = np.load(args.infile)
         if not 'y' in data: 
@@ -243,7 +244,7 @@ def main():
         cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
                                      zip_params = False, nproc = 10)
     elif method == 'logLasso':
-        alphas_log = [{'penalty':'l2', 'C':float(c)} for c in args.C.split(',')]
+        alphas_log = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
         alphas_ridge = [{'alpha':float(a)} for a in args.alphas.split(',')]
         cv_res = cross_validate_grid(cv, LogClassifierRidgeRegressor, alphas_log, alphas_ridge,
                                      feat, y, zip_params = False, nproc = 10)
