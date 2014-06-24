@@ -181,12 +181,9 @@ def logLass_cv_to_pandas_df(res, cv = 10):
     return df
 
 
-def concatenate_expt_feat_mat(indir, expt_names):
+def concatenate_expt_feat_mat(infiles):
     feat = None
-    for ex in expt_names:
-        infile = os.path.join(indir, ex + '_feat_mat.npz')
-        if not os.path.exists(infile):
-            continue
+    for infile in infiles:
         data = np.load(infile)
         if not 'y' in data:
             continue
@@ -219,20 +216,25 @@ def main():
                         help = 'Comma separated list of values for the alpha parameter of Lasso regression')
     parser.add_argument('--cs', default = '1', 
                         help = 'Comma separated list of values for the C parameter of logistic regression')
+    parser.add_argument('--nproc', default = 8, help = 'Number of processors to use')
+
     args = parser.parse_args()
     method = args.method
+    nproc = args.nproc
 
     if os.path.isfile(args.infile):
         data = np.load(args.infile)
-        if not 'y' in data: 
+        if not 'y' in data:
             warning('File ' + args.infile + ' does not have y vector. Exiting.')
             return
         feat = data['feat']
         y = data['y']
         data.close()
     else:
-        pass
-    
+        files = os.listdir(args.infile)
+        infiles = [f for f in files if (not os.path.isdir(f) and f.endswith('_feat_mat.npz'))]
+        (feat, y) = concatenate_expt_feat_mat(infiles)
+
     cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, test_size = 0.1, random_state = 0) 
     if method == 'rf':
         ntrees_vals = [int(s) for s in args.ntrees.split(',')]
@@ -242,12 +244,12 @@ def main():
         for p in clf_params:
             p['criterion'] = 'entropy'
         cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
-                                     zip_params = False, nproc = 10)
+                                     zip_params = False, nproc = nproc)
     elif method == 'logLasso':
         alphas_log = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
         alphas_ridge = [{'alpha':float(a)} for a in args.alphas.split(',')]
         cv_res = cross_validate_grid(cv, LogClassifierRidgeRegressor, alphas_log, alphas_ridge,
-                                     feat, y, zip_params = False, nproc = 10)
+                                     feat, y, zip_params = False, nproc = nproc)
     np.savez(args.outfile, cv_res = cv_res)
 
 
