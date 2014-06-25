@@ -1,0 +1,16 @@
+library(calibrate)
+library(plotrix)
+#library(ape)
+
+png(file="Desktop/RCodes/Cluster.png",width=2000, height=1000) 
+#pdf(file="Cluster.pdf", width=5000, height=1000)
+#par(mai = c(3,1,0.1,0.2))
+par(mai=c(1.3,1.3,1.3,1.3)) 
+d.exon <- read.table("Desktop/RCodes/rma-sketch.summary.txt", sep="\t", header=T, row.names=1)
+temp<-t(d.exon)
+d.t <- dist(temp)
+hc<-hclust(d.t)
+plot(hc, main="Hierarchical clustering",cex=0.7,hang=-1)
+# plot basic tree
+#plot(as.phylo(hc), cex = 0.9, label.offset = 1)
+dev.off()
