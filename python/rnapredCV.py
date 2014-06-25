@@ -1,13 +1,17 @@
+import sys
+import os
+import os.path
+import pandas as pd
+import argparse
+import numpy as np
 from multiprocessing import Pool
 from sklearn import linear_model
 from sklearn import ensemble
 from sklearn import cross_validation
 from sklearn import metrics
-import rpy2.robjects.lib.ggplot2 as ggplot2
-import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
-import pandas as pd
-import argparse
+#import rpy2.robjects.lib.ggplot2 as ggplot2
+#import rpy2.robjects as ro
+#from rpy2.robjects.packages import importr
 
 class TwoStepRegressor():
     """Base class for a two-step regressor.
@@ -176,20 +180,24 @@ def logLass_cv_to_pandas_df(res, cv = 10):
         r2.extend(r[2])
         
     df = pd.DataFrame({'C':logC, 'alpha':ridgeA, 'r2':r2})
-    df['title'] = ['C{:f}-alpha{:f}'.format(s[0], s[1]) 
+    df['title'] = ['C{:g}-alpha{:g}'.format(s[0], s[1]) 
                    for s in zip(df['C'], df['alpha'])]
     return df
 
 
 def concatenate_expt_feat_mat(infiles):
     feat = None
+    y = None
     for infile in infiles:
         data = np.load(infile)
         if not 'y' in data:
             continue
-        tmp_feat = data['feat']
+        tmp_feat = data['feat']        
         tmp_y = data['y']
+        tmp_y = tmp_y / np.max(tmp_y)
         tmp_feat_names = data['feat_names']
+        ex_ind = np.argwhere(np.array(data['feat_names']) == 'array_expr')[0][0]
+        tmp_feat[:, ex_ind] = tmp_feat[:, ex_ind] / np.max(tmp_feat[:, ex_ind])
         if feat is None:
             feat = tmp_feat
             y = tmp_y
@@ -216,8 +224,9 @@ def main():
                         help = 'Comma separated list of values for the alpha parameter of Lasso regression')
     parser.add_argument('--cs', default = '1', 
                         help = 'Comma separated list of values for the C parameter of logistic regression')
-    parser.add_argument('--nproc', default = 8, help = 'Number of processors to use')
-
+    parser.add_argument('--nproc', type = int, default = 8, help = 'Number of processors to use')
+    parser.add_argument('--nocv', action = 'store_true', default = False,
+                        help = 'No cross-validation. Just run and return the model.')
     args = parser.parse_args()
     method = args.method
     nproc = args.nproc
@@ -231,26 +240,43 @@ def main():
         y = data['y']
         data.close()
     else:
-        files = os.listdir(args.infile)
-        infiles = [f for f in files if (not os.path.isdir(f) and f.endswith('_feat_mat.npz'))]
-        (feat, y) = concatenate_expt_feat_mat(infiles)
+        files = [os.path.join(args.infile, f) for f in os.listdir(args.infile)]
+        files = [f for f in files if (os.path.exists(f) and not os.path.isdir(f) and f.endswith('_feat_mat.npz'))]
+        (feat, y) = concatenate_expt_feat_mat(files)
 
     cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, test_size = 0.1, random_state = 0) 
     if method == 'rf':
         ntrees_vals = [int(s) for s in args.ntrees.split(',')]
         min_leaf_vals = [int(s) for s in args.leaf.split(',')]
         params = get_forest_params(ntrees_vals, min_leaf_vals)
-        clf_params = dict(params)
-        for p in clf_params:
-            p['criterion'] = 'entropy'
-        cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
-                                     zip_params = False, nproc = nproc)
+        clf_params = []
+        for p in params:
+            newp = dict(p)
+            newp['criterion'] = 'entropy'
+            clf_params.append(newp)
+
+        if args.nocv:
+            class_name = RFClassifierRFRegressor
+        else:
+            cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
+                                         zip_params = False, nproc = nproc)
     elif method == 'logLasso':
-        alphas_log = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
-        alphas_ridge = [{'alpha':float(a)} for a in args.alphas.split(',')]
-        cv_res = cross_validate_grid(cv, LogClassifierRidgeRegressor, alphas_log, alphas_ridge,
-                                     feat, y, zip_params = False, nproc = nproc)
-    np.savez(args.outfile, cv_res = cv_res)
+        clf_params = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
+        params = [{'alpha':float(a)} for a in args.alphas.split(',')]
+        if args.nocv:
+            class_name = LogClassifierRidgeRegressor
+        else:
+            cv_res = cross_validate_grid(cv, LogClassifierRidgeRegressor, clf_params, params,
+                                         feat, y, zip_params = False, nproc = nproc)
+
+    if args.nocv:
+        assert(len(clf_params) == 1)
+        assert(len(params) == 1)
+        model = class_name(clf_params[0], params[0])
+        model.fit(feat, y)
+        np.savez(args.outfile, model = model)
+    else:
+        np.savez(args.outfile, cv_res = cv_res)
 
 
 if __name__ == '__main__':
