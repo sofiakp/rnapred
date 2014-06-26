@@ -42,6 +42,10 @@ class TwoStepRegressor():
     def reg_coef(self):
         return model2.coef_
 
+    def set_njobs(njobs = 1):
+        model1.n_jobs = njobs
+        model2.n_jobs = njobs
+
     
 class RFClassifierRFRegressor(TwoStepRegressor):
     def __init__(self, args_clf, args_reg):
@@ -59,6 +63,10 @@ class LogClassifierRidgeRegressor(TwoStepRegressor):
     def __init__(self, args_clf, args_reg):
         self.model1 = linear_model.LogisticRegression(**args_clf)
         self.model2 = linear_model.Ridge(**args_reg)
+
+    def set_njobs(njobs = 1):
+        if njobs > 1:
+            warning('njobs > 1 has no effect for LogClassifierRidgeRegressor')
 
 
 def cross_validate(cv, class_name, args_clf, args_reg, X, y):
