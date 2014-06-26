@@ -1,20 +1,22 @@
-map<-read.table("Desktop/cel_name_map.txt",header=T)
-CELFiles<-read.table("Desktop/RCodes/rma-sketch.summary.txt",header=T)
+map<-read.table("Desktop/cel_name_map.txt")
+CELFiles<-read.table("Desktop/RCodes/rma-sketch.summary.txt",header=TRUE,check.names=FALSE)
 colnames(map)[1]<-"cel_name"
 colnames(map)[2]<-"type"
 
+
 type<-map$type
 typeU<-unique(type)
+
 
 temp<-matrix( ,nrow=length(typeU),ncol=400)
 
 for( i in typeU)
 {
   if('-' %in% typeU){
-      print("find '-'")
      typeU<-typeU[-(match('-',typeU))]
   }
 }
+
 
 #Finding CEL files with the same type
 print("Start finding CEL files with the same type")
@@ -22,8 +24,9 @@ for( k in 1:length(typeU)){
    index=1
    for( i in 1:nrow(map)){
       for( j in i+1:nrow(map)){
-         if( j< 159){
+         if( j<=159){
            if((map[i,2]==typeU[k]) & (map[j,2]==typeU[k])){
+               
               temp[k,index]<-toString(map[i,1])
               index<-index+1
               temp[k,index]<-toString(map[j,1])
@@ -41,6 +44,7 @@ print("End of finding CEL files with the same type")
  for( m in 2:ncol(CELFiles)){
      string<-gsub(".CEL","", colnames(CELFiles)[m])
      colnames(CELFiles)[m]<-toString(string)
+     
 }
 
 # Create a matrix to save all the computed correaltions
@@ -109,6 +113,7 @@ for ( m in 1:nrow(temp))
 }
 
 print("End of compuitng correlations")
+
 
 
 
