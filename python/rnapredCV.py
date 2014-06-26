@@ -42,9 +42,9 @@ class TwoStepRegressor():
     def reg_coef(self):
         return model2.coef_
 
-    def set_njobs(njobs = 1):
-        model1.n_jobs = njobs
-        model2.n_jobs = njobs
+    def set_njobs(self, njobs):
+        self.model1.n_jobs = njobs
+        self.model2.n_jobs = njobs
 
     
 class RFClassifierRFRegressor(TwoStepRegressor):
@@ -141,12 +141,12 @@ def cross_validate_grid(cv, class_name, args_clf_list, args_reg_list, X, y,
     return res
 
 
-def get_forest_params(ntrees_vals, min_leaf_vals):
+def get_forest_params(ntrees_vals, min_leaf_vals, nproc = 8):
     """Creates cross validation parameters for a RandomForestClassifier or Regressor.
     One dictionary of parameters is created for each combination of the input arguments.
     """
     
-    forest_params = {'max_features':'auto'}
+    forest_params = {'max_features':'auto', 'n_jobs':nproc}
     param_list = []
     for t in ntrees_vals:
         for n in min_leaf_vals:
@@ -259,6 +259,7 @@ stored in a pickled file.
     nocv = args.nocv
     
     if os.path.isfile(args.infile):
+        # CV/learning on the specified file.
         data = np.load(args.infile)
         if not 'y' in data:
             warning('File ' + args.infile + ' does not have y vector. Exiting.')
@@ -266,22 +267,40 @@ stored in a pickled file.
         feat = data['feat']
         y = data['y']
         data.close()
+        if not nocv:
+            cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, 
+                                               test_size = 0.1, random_state = 0) 
     else:
         assert(not args.expt is None and os.path.isfile(args.expt))
         with open(args.expt, 'r') as infile:
             files = [f.strip() for f in infile.readlines()]
         if not args.exclude_expt is None:
             if not args.exclude_expt in files:
-                warning('Experiment ' + args.exclude_expt + ' not in the list specified.')
+                raise ValueError('Experiment ' + args.exclude_expt + ' not in the list specified.')
             files = [f for f in files if f != args.exclude_expt]
+        # Load training data.
         files = [os.path.join(args.infile, f + '_feat_mat.npz') for f in files]
         (feat, y) = concatenate_expt_feat_mat(files)
+        if not nocv:
+            if args.exclude_expt is None:
+                cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, 
+                                               test_size = 0.1, random_state = 0) 
+            else:
+                # If exclude_expt is specified, this will be the test set,
+                # so we won't create any folds.
+                files = [os.path.join(args.infile, args.exclude_expt + '_feat_mat.npz')]
+                (test_feat, test_y) = concatenate_expt_feat_mat(files)
+                cv = zip([np.arange(len(y))], [np.arange(len(y), len(y) + len(test_y))])
+                print feat.shape
+                feat = np.concatenate((feat, test_feat), axis = 0)
+                y = np.concatenate((y, test_y), axis = 0)
+                print feat.shape
+    return
 
-    cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, test_size = 0.1, random_state = 0) 
     if method == 'rf':
         ntrees_vals = [int(s) for s in args.ntrees.split(',')]
         min_leaf_vals = [int(s) for s in args.leaf.split(',')]
-        params = get_forest_params(ntrees_vals, min_leaf_vals)
+        params = get_forest_params(ntrees_vals, min_leaf_vals, nproc)
         clf_params = []
         for p in params:
             newp = dict(p)
@@ -291,8 +310,9 @@ stored in a pickled file.
         if nocv:
             class_name = RFClassifierRFRegressor
         else:
+            # Set nproc to 1. Multi-processing will be done at the level of tree learning.
             cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
-                                         zip_params = False, nproc = nproc)
+                                         zip_params = False, nproc = 1)
     elif method == 'logLasso':
         clf_params = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
         params = [{'alpha':float(a)} for a in args.alphas.split(',')]
