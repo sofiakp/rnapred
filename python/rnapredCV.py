@@ -4,6 +4,7 @@ import os.path
 import pandas as pd
 import argparse
 import numpy as np
+import pickle
 from multiprocessing import Pool
 from sklearn import linear_model
 from sklearn import ensemble
@@ -194,10 +195,8 @@ def concatenate_expt_feat_mat(infiles):
             continue
         tmp_feat = data['feat']        
         tmp_y = data['y']
-        tmp_y = tmp_y / np.max(tmp_y)
         tmp_feat_names = data['feat_names']
-        ex_ind = np.argwhere(np.array(data['feat_names']) == 'array_expr')[0][0]
-        tmp_feat[:, ex_ind] = tmp_feat[:, ex_ind] / np.max(tmp_feat[:, ex_ind])
+        data.close()
         if feat is None:
             feat = tmp_feat
             y = tmp_y
@@ -211,10 +210,25 @@ def concatenate_expt_feat_mat(infiles):
 
 
 def main():
-    desc = """Performs cross-validation of a TwoStepRegressor in a grid of parameters."""
-    parser = argparse.ArgumentParser(description = desc)
-    parser.add_argument('infile', help = 'Input file or directory. If it is a directory, files will be concatenated')
-    parser.add_argument('outfile', help = 'Path to output npz file')
+    desc = """Performs cross-validation of a TwoStepRegressor or just runs it and returns the model.
+By default, it performs 10-fold CV and stores the results in an npz file.
+However, if --nocv is set, then a single model is learned on all the data and the output is 
+stored in a pickled file.
+
+- If infile is a file, then CV/learning will be performed for the given set of parameters. 
+- If infile is a directory, then --expt must be specified. 
+  It will read all files <infile>/<ex>_feat_mat.npz where <ex> is a line in the file
+  given as an argument to --expt.
+  - If --exclude_expt is not specified, it will run CV/learning on the concatenated 
+    data from all the files.
+  - If --exclude_expt is set to E, it will run CV/learning on the concatenated data
+    from all the files EXCEPT <E>_feat_mat.npz. 
+"""
+
+    parser = argparse.ArgumentParser(description = desc, 
+                                     formatter_class = argparse.RawTextHelpFormatter)
+    parser.add_argument('infile', help = 'Input file or directory.')
+    parser.add_argument('outfile', help = 'Path to output file')
     parser.add_argument('--method', '-m', default = 'rf', help = 'One of logLasso or rf')
     parser.add_argument('--ntrees', default = '10', 
                         help = 'Comma separated list of values for the number of trees')
@@ -227,10 +241,15 @@ def main():
     parser.add_argument('--nproc', type = int, default = 8, help = 'Number of processors to use')
     parser.add_argument('--nocv', action = 'store_true', default = False,
                         help = 'No cross-validation. Just run and return the model.')
+    parser.add_argument('--expt', default = None,
+                        help = 'File with a list of prefixes of files to read. Only makes sense if infile is a directory')
+    parser.add_argument('--exclude_expt', default = None, 
+                        help = 'Experiment to exclude (only makes sense if infile is a directory')
     args = parser.parse_args()
     method = args.method
     nproc = args.nproc
-
+    nocv = args.nocv
+    
     if os.path.isfile(args.infile):
         data = np.load(args.infile)
         if not 'y' in data:
@@ -240,8 +259,14 @@ def main():
         y = data['y']
         data.close()
     else:
-        files = [os.path.join(args.infile, f) for f in os.listdir(args.infile)]
-        files = [f for f in files if (os.path.exists(f) and not os.path.isdir(f) and f.endswith('_feat_mat.npz'))]
+        assert(not args.expt is None and os.path.isfile(args.expt))
+        with open(args.expt, 'r') as infile:
+            files = [f.strip() for f in infile.readlines()]
+        if not args.exclude_expt is None:
+            if not args.exclude_expt in files:
+                warning('Experiment ' + args.exclude_expt + ' not in the list specified.')
+            files = [f for f in files if f != args.exclude_expt]
+        files = [os.path.join(args.infile, f + '_feat_mat.npz') for f in files]
         (feat, y) = concatenate_expt_feat_mat(files)
 
     cv = cross_validation.ShuffleSplit(feat.shape[0], n_iter = 10, test_size = 0.1, random_state = 0) 
@@ -255,7 +280,7 @@ def main():
             newp['criterion'] = 'entropy'
             clf_params.append(newp)
 
-        if args.nocv:
+        if nocv:
             class_name = RFClassifierRFRegressor
         else:
             cv_res = cross_validate_grid(cv, RFClassifierRFRegressor, clf_params, params, feat, y, 
@@ -263,18 +288,19 @@ def main():
     elif method == 'logLasso':
         clf_params = [{'penalty':'l2', 'C':float(c)} for c in args.cs.split(',')]
         params = [{'alpha':float(a)} for a in args.alphas.split(',')]
-        if args.nocv:
+        if nocv:
             class_name = LogClassifierRidgeRegressor
         else:
             cv_res = cross_validate_grid(cv, LogClassifierRidgeRegressor, clf_params, params,
                                          feat, y, zip_params = False, nproc = nproc)
 
-    if args.nocv:
+    if nocv:
         assert(len(clf_params) == 1)
         assert(len(params) == 1)
         model = class_name(clf_params[0], params[0])
         model.fit(feat, y)
-        np.savez(args.outfile, model = model)
+        with open(args.outfile, 'wb') as outfile:
+            pickle.dump(model, outfile)
     else:
         np.savez(args.outfile, cv_res = cv_res)
 
