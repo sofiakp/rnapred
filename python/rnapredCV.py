@@ -37,10 +37,10 @@ class TwoStepRegressor():
         """Return coefficients for the classification model.
         The meaning of these coefficients depends on the type of model.
         """
-        return model1.coef_
+        return self.model1.coef_
     
     def reg_coef(self):
-        return model2.coef_
+        return self.model2.coef_
 
     def set_njobs(self, njobs):
         self.model1.n_jobs = njobs
@@ -53,11 +53,12 @@ class RFClassifierRFRegressor(TwoStepRegressor):
         self.model2 = ensemble.RandomForestRegressor(**args_reg)
      
     def clf_coef(self):
-        return model1.feature_importances_
-    
-    def reg_coef(self):
-        return model2.feature_importances_
+        c = model1.feature_importances_
+        return np.reshape(c, (c.size, 1))
 
+    def reg_coef(self):
+        c = model2.feature_importances_
+        return np.reshape(c, (c.size, 1))
     
 class LogClassifierRidgeRegressor(TwoStepRegressor):
     def __init__(self, args_clf, args_reg):
@@ -67,6 +68,14 @@ class LogClassifierRidgeRegressor(TwoStepRegressor):
     def set_njobs(njobs = 1):
         if njobs > 1:
             warning('njobs > 1 has no effect for LogClassifierRidgeRegressor')
+
+    def clf_coef(self):
+        c = self.model1.coef_[0]
+        return np.reshape(c, (c.size, 1))
+
+    def reg_coef(self):
+        c = self.model2.coef_
+        return np.reshape(c, (c.size, 1))
 
 
 def cross_validate(cv, class_name, args_clf, args_reg, X, y):
@@ -217,6 +226,27 @@ def concatenate_expt_feat_mat(infiles):
     return (feat, y)
 
 
+
+def read_model(filename):
+    with open(filename, 'rb') as infile:
+        model = pickle.load(infile)
+    return model
+
+
+def read_cv_res(filename):
+    data = np.load(filename)
+    cv_res = data['cv_res']
+    data.close()
+    return cv_res
+
+
+def read_feat_mat(filename):
+    data = np.load(filename)
+    feat, y, feat_names = data['feat'], data['y'], data['feat_names']
+    data.close()
+    return (feat, y, feat_names)
+
+
 def main():
     desc = """Performs cross-validation of a TwoStepRegressor or just runs it and returns the model.
 By default, it performs 10-fold CV and stores the results in an npz file.
@@ -241,7 +271,8 @@ stored in a pickled file.
     parser.add_argument('--ntrees', default = '10', 
                         help = 'Comma separated list of values for the number of trees')
     parser.add_argument('--leaf', default = '1',
-                        help = 'Comma separated list of values for the min number of examples per leaf')
+                        help = 'Comma separated list of values for the min number of examples per leaf.' + 
+                        'You can specify a separate list for the classifier and the regressor, separated by /.')
     parser.add_argument('--alphas', default = '1',
                         help = 'Comma separated list of values for the alpha parameter of Lasso regression')
     parser.add_argument('--cs', default = '1', 
@@ -296,14 +327,15 @@ stored in a pickled file.
 
     if method == 'rf':
         ntrees_vals = [int(s) for s in args.ntrees.split(',')]
-        min_leaf_vals = [int(s) for s in args.leaf.split(',')]
+        leaf_lists = args.leaf.split('/')
+        min_leaf_vals = [int(s) for s in leaf_lists[0].split(',')]
+        clf_params = get_forest_params(ntrees_vals, min_leaf_vals, nproc)
+        for p in clf_params:
+            p['criterion'] = 'entropy'
+        if len(leaf_lists) > 0:
+            min_leaf_vals = [int(s) for s in leaf_lists[1].split(',')]
         params = get_forest_params(ntrees_vals, min_leaf_vals, nproc)
-        clf_params = []
-        for p in params:
-            newp = dict(p)
-            newp['criterion'] = 'entropy'
-            clf_params.append(newp)
-
+                    
         if nocv:
             class_name = RFClassifierRFRegressor
         else:
