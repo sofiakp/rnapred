@@ -86,7 +86,7 @@ def cross_validate(cv, class_name, args_clf, args_reg, X, y):
     r2 = []
     for train, test in cv:
         model = class_name(args_clf, args_reg)
-        model.fit(X[train, :], y[train, :])
+        model.fit(X[train, :], y[train])
         pred = model.predict(X[test, :])
         r2.append(metrics.r2_score(y[test], pred))
     return r2
@@ -291,11 +291,8 @@ stored in a pickled file.
                 files = [os.path.join(args.infile, args.exclude_expt + '_feat_mat.npz')]
                 (test_feat, test_y) = concatenate_expt_feat_mat(files)
                 cv = zip([np.arange(len(y))], [np.arange(len(y), len(y) + len(test_y))])
-                print feat.shape
                 feat = np.concatenate((feat, test_feat), axis = 0)
                 y = np.concatenate((y, test_y), axis = 0)
-                print feat.shape
-    return
 
     if method == 'rf':
         ntrees_vals = [int(s) for s in args.ntrees.split(',')]
