@@ -105,7 +105,7 @@ else
 fi
 
 if [ $NPROC -gt 1 ]; then
-    parg="-pe orte $NPROC"
+    parg="-pe shm $NPROC"
 else
     parg=""
 fi
@@ -127,7 +127,7 @@ if [[ $MERGE -eq 1 ]] && [[ $SPLIT -eq 0 ]]; then
 	echo "module add python/2.7" >> $script
 	echo "module add r/2.15.1" >> $script
 	echo $command >> $script
-	qsub -N ${sample}_${METHOD} -q standard -l h_vmem=3G -l h_rt=6:00:00 $parg -e $errfile -o /dev/null $script
+	qsub -N merged_${METHOD} -q standard -l h_vmem=3G -l h_rt=6:00:00 $parg -e $errfile -o /dev/null $script
     fi
 else
     while read sample; do
