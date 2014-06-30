@@ -53,12 +53,13 @@ class RFClassifierRFRegressor(TwoStepRegressor):
         self.model2 = ensemble.RandomForestRegressor(**args_reg)
      
     def clf_coef(self):
-        c = model1.feature_importances_
+        c = self.model1.feature_importances_
         return np.reshape(c, (c.size, 1))
 
     def reg_coef(self):
-        c = model2.feature_importances_
+        c = self.model2.feature_importances_
         return np.reshape(c, (c.size, 1))
+
     
 class LogClassifierRidgeRegressor(TwoStepRegressor):
     def __init__(self, args_clf, args_reg):
@@ -226,14 +227,30 @@ def concatenate_expt_feat_mat(infiles):
     return (feat, y)
 
 
-
 def read_model(filename):
+    """Reads a learned TwoStepRegressor model.
+
+    Args:
+    - filename: Name of file (pkl)
+    
+    Return value:
+    Model: A TwoStepRegressor.
+    """
+
     with open(filename, 'rb') as infile:
         model = pickle.load(infile)
     return model
 
 
 def read_cv_res(filename):
+    """Reads the results of cross-validation.
+
+    Arg:
+    - filename: Name of file (npz).
+
+    Return value:
+    cv_res: As returned by cross_validate_grid.
+    """
     data = np.load(filename)
     cv_res = data['cv_res']
     data.close()
@@ -241,10 +258,22 @@ def read_cv_res(filename):
 
 
 def read_feat_mat(filename):
+    """Reads feature matrix.
+
+    Arg:
+    - filename: Name of file (npz).
+
+    Return value:
+    A tuple (feat, y, feat_names, gene_names).
+    """
     data = np.load(filename)
-    feat, y, feat_names = data['feat'], data['y'], data['feat_names']
+    feat, feat_names, gene_names = data['feat'], data['feat_names'], data['gene_names']
+    if 'y' in data:
+        y = data['y']
+    else:
+        y = None
     data.close()
-    return (feat, y, feat_names)
+    return (feat, y, feat_names, gene_names)
 
 
 def main():
